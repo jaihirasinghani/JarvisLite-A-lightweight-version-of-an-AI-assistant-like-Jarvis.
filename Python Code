@@ -1,0 +1,189 @@
+import pyttsx3
+import speech_recognition as sr
+import requests
+import webbrowser
+import datetime
+import pyjokes
+import os
+import json
+from difflib import get_close_matches
+
+# Replace with your Hugging Face API Key
+HUGGINGFACE_API_KEY = "HUGGINGFACE_API_KEY"
+
+# File to store learned answers
+DATA_FILE = "bot_memory.json"
+
+
+# Initialize Text-to-Speech Engine
+def speechtx(text):  # text-to-speech
+    engine = pyttsx3.init()  # Has 2 voices: male and female
+    voices = engine.getProperty('voices')
+    engine.setProperty('voice', voices[1].id)
+    rate = engine.getProperty('rate')
+    engine.setProperty('rate', 140)
+    print(text)
+    engine.say(text)
+    engine.runAndWait()
+
+
+
+# Speech-to-Text Function
+def sptext():
+    recognizer = sr.Recognizer()
+    with sr.Microphone() as source:
+        print("Listening...")
+        recognizer.adjust_for_ambient_noise(source)
+        audio = recognizer.listen(source)
+        try:
+            print("Recognizing...")
+            data = recognizer.recognize_google(audio)
+            print(data)
+            return data
+        except sr.UnknownValueError:
+            return "Sorry, I didn't catch that."
+
+
+# Load stored answers
+def load_memory():
+    if os.path.exists(DATA_FILE):
+        with open(DATA_FILE, "r") as file:
+            return json.load(file)
+    return {}
+
+
+# Save new answers
+def save_memory(memory):
+    with open(DATA_FILE, "w") as file:
+        json.dump(memory, file)
+
+
+# Function to find the best match for partial questions
+def find_best_match(query, data):
+    query_lower = query.lower()
+
+    # Check for an exact match first
+    if query_lower in data:
+        return data[query_lower]
+
+    # Try to find a close match
+    matches = get_close_matches(query_lower, data.keys(), n=1, cutoff=0.3)
+    if matches:
+        return data[matches[0]]
+
+    # Check for any key that contains the search words
+    for key in data.keys():
+        if all(word in key.lower() for word in query_lower.split()):
+            return data[key]
+
+    return None  # Return None if no match is found
+
+
+# Function to Ask Hugging Face API
+def ask_huggingface(question):
+    headers = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
+    api_url = "HUGGINGFACE URL"
+    data = {"inputs": question}
+
+    response = requests.post(api_url, headers=headers, json=data)
+    result = response.json()
+
+    print("Hugging Face Response:", result)  # Debugging print
+
+    if isinstance(result, list) and len(result) > 0:
+        return result[0].get("generated_text", "I don't know the answer to that.")
+
+    elif isinstance(result, dict) and "generated_text" in result:
+        return result["generated_text"]
+
+    elif isinstance(result, dict) and "error" in result:
+        return f"Error from API: {result['error']}"
+
+    return "I don't know the answer to that."
+
+
+# Main Chatbot Logic
+if __name__ == '__main__':
+    memory = load_memory()
+
+    while True:
+        data1 = sptext().lower()
+
+        if "hey jarvis" in data1:
+            speechtx("Hello! How can I help?")
+
+            while True:
+                data1 = sptext().lower()
+
+                # First check for an exact or partial match
+                answer = find_best_match(data1, memory)
+                if answer:
+                    speechtx(answer)
+
+                elif "your name" in data1:
+                    name = "my name is jarvis"
+                    # memory[data1] = name
+                    speechtx(name)
+
+                elif "who made" in data1:
+                    creator = "I was made by developer"
+                    # memory[data1] = creator
+                    speechtx(creator)
+
+                elif "how old" in data1:
+                    age = "I'm a few years old, currently learning"
+                    # memory[data1] = age
+                    speechtx(age)
+
+                elif "time now" in data1:
+                    time_now = datetime.datetime.now().strftime("%I:%M %p")
+                    # memory[data1] = time_now
+                    speechtx(time_now)
+
+                elif "exit" in data1:
+                    speechtx("Goodbye! See you soon!")
+                    save_memory(memory)
+                    break
+
+                elif "youtube" in data1:
+                    speechtx("Opening YouTube.")
+                    webbrowser.open("https://www.youtube.com/")
+
+                elif "search" in data1:
+                    search_query = data1.replace("search", "").strip()
+                    webbrowser.open(f"https://www.google.com/search?q={search_query}")
+                    speechtx(f"Searching for {search_query} on Google.")
+
+                elif "open notepad" in data1:
+                    speechtx("Opening Notepad.")
+                    os.startfile("notepad.exe")
+
+                elif "open calculator" in data1:
+                    speechtx("Opening Calculator.")
+                    os.startfile("calc.exe")
+
+                elif "ok thanks" in data1:
+                    speechtx("You're welcome! Let me know if you have another question.")
+                    save_memory(memory)
+                    break
+
+                else:
+                    speechtx("I don't know that. Let me learn.")
+                    response = ask_huggingface(data1)
+
+                    # Save response if it's a valid answer
+                    if response and "Error" not in response:
+                        memory[data1] = response
+                        speechtx(response)
+                        save_memory(memory)
+                    else:
+                        speechtx("I'm sorry, I couldn't find an answer.")
+
+        elif "ok thanks" in data1:
+            speechtx("Goodbye!")
+            save_memory(memory)
+            break
+        elif "exit" in data1:
+            speechtx("Goodbye!")
+            save_memory(memory)
+            break
